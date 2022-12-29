@@ -565,6 +565,8 @@ const snowflakePlugin: Plugin<SnowflakePluginInput> = {
 
         const { account, username, password, dbschema, table, stage, database, role, warehouse, copyCadenceMinutes } = config
 
+        console.log("setting up snowflake from setupPlugin now")
+
         global.snowflake = new Snowflake({
             account,
             username,
