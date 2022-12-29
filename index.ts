@@ -215,7 +215,7 @@ function generateCsvFileName(): string {
     return `snowflake-export-${day}-${dayTime}-${suffix}.csv`
 }
 
-function generateCsvString(events: TableRow[]): string {
+export function generateCsvString(events: TableRow[]): string {
     const columns: (keyof TableRow)[] = [
         'uuid',
         'event',
@@ -237,7 +237,7 @@ function generateCsvString(events: TableRow[]): string {
     return csvRows.join('\n')
 }
 
-class Snowflake {
+export class Snowflake {
     private pool: Pool<snowflake.Connection>
     private s3connector: S3 | null
     database: string
@@ -384,17 +384,17 @@ class Snowflake {
         return createPool(
             {
                 create: async () => {
-                    const connection = snowflake.createConnection({
-                        account,
-                        username,
-                        password,
-                        database: this.database,
-                        schema: this.dbschema,
-                        ...roleConfig,
-                    })
-
-                    await retryPromiseWithDelayAndTimeout(() => new Promise<string>((resolve, reject) =>
-                        connection.connect((err, conn) => {
+                    let connection: snowflake.Connection
+                    await retryPromiseWithDelayAndTimeout(() => new Promise<string>((resolve, reject) => {
+                        connection = snowflake.createConnection({
+                            account,
+                            username,
+                            password,
+                            database: this.database,
+                            schema: this.dbschema,
+                            ...roleConfig,
+                        })
+                        return connection.connect((err, conn) => {
                             if (err) {
                                 console.error('Error connecting to Snowflake: ' + err.message)
                                 reject(err)
@@ -402,8 +402,7 @@ class Snowflake {
                                 resolve(conn.getId())
                             }
                         })
-                    ), 5, 5000, 5000)
-
+                    }), 5, 5000, 5000)
                     return connection
                 },
                 destroy: async (connection) => {

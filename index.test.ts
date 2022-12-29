@@ -1,13 +1,23 @@
 
-import snowflakePlugin, { waitFor, timeout, retryPromiseWithDelayAndTimeout } from "./index"
+import snowflakePlugin,
+{
+    waitFor,
+    timeout,
+    retryPromiseWithDelayAndTimeout,
+    generateCsvString,
+    Snowflake
+} from "./index"
 import AWS, { S3 } from 'aws-sdk'
 import Redis from 'ioredis'
 import { v4 as uuid4 } from "uuid"
 import { setupServer } from "msw/node"
 import { rest } from "msw"
 import zlib from "zlib"
+import axios from "axios"
+import MockAdapter from "axios-mock-adapter"
 
-jest.setTimeout(5000)
+// Set this higher for now to test the retry logic
+jest.setTimeout(60000)
 
 test("waitFor actually waits", async () => {
     const start = Date.now()
@@ -28,7 +38,7 @@ test("retryPromiseWithDelayAndTimeout actually retries with delay and timeout", 
     let retries = 0
     await expect(retryPromiseWithDelayAndTimeout(() => {
         return new Promise(async (resolve, reject) => {
-            retries += 1 
+            retries += 1
             await waitFor(100)
         })
     }, 5, 100, 50)).rejects.toEqual("Promise timed out")
@@ -37,6 +47,104 @@ test("retryPromiseWithDelayAndTimeout actually retries with delay and timeout", 
     expect(retries).toEqual(5)
 })
 
+test("generateCsvString generates expected csv", () => {
+    const events = [
+        {
+            event: "some",
+            distinct_id: "123",
+            team_id: 1,
+            ip: "0.0.0.0",
+            site_url: "https://app.posthog.com",
+            timestamp: "2020-01-01T01:01:01Z",
+            uuid: "9ae018e7-f87f-47bd-9ea1-63431d9fc071",
+            properties: JSON.stringify({ some: "property" }),
+            elements: JSON.stringify([{ some: "element" }]),
+            people_set: JSON.stringify({ some: "people_set" }),
+            people_set_once: JSON.stringify({ some: "people_set_once" }),
+        },
+        {
+            event: "some",
+            distinct_id: "123",
+            team_id: 1,
+            ip: "0.0.0.0",
+            site_url: "https://app.posthog.com",
+            timestamp: "2020-01-01T01:01:01Z",
+            uuid: "76c70c78-5f98-4153-a309-65fa920d35e7",
+            properties: JSON.stringify({ some: "property" }),
+            elements: JSON.stringify([{ some: "element" }]),
+            people_set: JSON.stringify({ some: "people_set" }),
+            people_set_once: JSON.stringify({ some: "people_set_once" }),
+        },
+        {
+            event: "some",
+            distinct_id: "123",
+            team_id: 1,
+            ip: "0.0.0.0",
+            site_url: "https://app.posthog.com",
+            timestamp: "2020-01-01T01:01:01Z",
+            uuid: "76c70c78-5f98-4153-a309-65fuk20d35e7",
+            properties: JSON.stringify({ some: "property" }),
+            elements: JSON.stringify([{ some: "element" }]),
+            people_set: JSON.stringify({ some: "people_set" }),
+            people_set_once: JSON.stringify({ some: "people_set_once" }),
+        }
+    ]
+    const csv = generateCsvString(events)
+    expect(csv).toEqual(
+        `uuid|$|event|$|properties|$|elements|$|people_set|$|people_set_once|$|distinct_id|$|team_id|$|ip|$|site_url|$|timestamp\n`
+        + `9ae018e7-f87f-47bd-9ea1-63431d9fc071|$|some|$|{"some":"property"}|$|[{"some":"element"}]|$|{"some":"people_set"}|$|{"some":"people_set_once"}|$|123|$|1|$|0.0.0.0|$|https://app.posthog.com|$|2020-01-01T01:01:01Z\n`
+        + `76c70c78-5f98-4153-a309-65fa920d35e7|$|some|$|{"some":"property"}|$|[{"some":"element"}]|$|{"some":"people_set"}|$|{"some":"people_set_once"}|$|123|$|1|$|0.0.0.0|$|https://app.posthog.com|$|2020-01-01T01:01:01Z\n`
+        + `76c70c78-5f98-4153-a309-65fuk20d35e7|$|some|$|{"some":"property"}|$|[{"some":"element"}]|$|{"some":"people_set"}|$|{"some":"people_set_once"}|$|123|$|1|$|0.0.0.0|$|https://app.posthog.com|$|2020-01-01T01:01:01Z`
+    )
+})
+
+test("handles bad connection", async () => {
+    mswServer.close()
+    const mock = new MockAdapter(axios)
+    mock.onPost('/session/v2/login-request').reply(500, "Internal Server Error")
+
+    // NOTE: we create random names for tests such that we can run tests
+    // concurrently without fear of conflicts
+    const bucketName = uuid4()
+    const snowflakeAccount = uuid4()
+
+    let meta = {}
+    Object.assign(meta, {
+        attachments: {},
+        config: {
+            account: snowflakeAccount,
+            username: "username",
+            password: "password",
+            database: "database",
+            dbschema: "dbschema",
+            table: "table",
+            stage: "S4",
+            eventsToIgnore: "eventsToIgnore",
+            bucketName: bucketName,
+            warehouse: "warehouse",
+            awsAccessKeyId: "awsAccessKeyId",
+            awsSecretAccessKey: "awsSecretAccessKey",
+            awsRegion: "string",
+            storageIntegrationName: "storageIntegrationName",
+            role: "role",
+            stageToUse: 'S4' as const,
+            purgeFromStage: 'Yes' as const,
+            bucketPath: "bucketPath",
+            retryCopyIntoOperations: 'Yes' as const,
+            forceCopy: 'Yes' as const,
+            debug: 'ON' as const,
+        },
+        jobs: createJobs(snowflakePlugin.jobs)(meta),
+        cache: cache,
+        storage: storage,
+        // Cast to any, as otherwise we don't match plugin call signatures
+        global: {} as any,
+        geoip: {} as any
+    })
+
+    await snowflakePlugin.setupPlugin?.(meta)
+    mock.restore();
+})
 
 test("handles events", async () => {
     // Checks for the happy path
@@ -67,7 +175,8 @@ test("handles events", async () => {
 
     let meta = {}
     Object.assign(meta, {
-        attachments: {}, config: {
+        attachments: {},
+        config: {
             account: snowflakeAccount,
             username: "username",
             password: "password",
