@@ -6,7 +6,6 @@ import { ManagedUpload } from 'aws-sdk/clients/s3'
 import { S3 } from 'aws-sdk'
 import { Storage, Bucket } from '@google-cloud/storage'
 import { PassThrough } from 'stream'
-import { Timeout } from 'aws-sdk/clients/lambda'
 
 interface SnowflakePluginInput {
     global: {

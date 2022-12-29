@@ -1,6 +1,6 @@
 {
     "name": "Snowflake Export",
-    "url": "https://github.com/fuziontech/snowflake-export-plugin",
+    "url": "https://github.com/posthog/snowflake-export-plugin",
     "description": "Export PostHog events into Snowflake",
     "main": "index.ts",
     "posthogVersion": ">=1.25.0",

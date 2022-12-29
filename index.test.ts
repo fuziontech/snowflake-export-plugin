@@ -30,7 +30,6 @@ test("retryPromiseWithDelayAndTimeout actually retries with delay and timeout", 
         return new Promise(async (resolve, reject) => {
             retries += 1 
             await waitFor(100)
-            // throw new Error("This should retry")
         })
     }, 5, 100, 50)).rejects.toEqual("Promise timed out")
     const end = Date.now()
