@@ -1,5 +1,5 @@
 
-import snowflakePlugin from "./index"
+import snowflakePlugin, { waitFor, timeout, retryPromiseWithDelayAndTimeout } from "./index"
 import AWS, { S3 } from 'aws-sdk'
 import Redis from 'ioredis'
 import { v4 as uuid4 } from "uuid"
@@ -8,6 +8,36 @@ import { rest } from "msw"
 import zlib from "zlib"
 
 jest.setTimeout(5000)
+
+test("waitFor actually waits", async () => {
+    const start = Date.now()
+    await waitFor(500)
+    const end = Date.now()
+    expect(end - start).toBeGreaterThanOrEqual(500)
+})
+
+test("timeout actually times out", async () => {
+    await expect(timeout(new Promise(async (resolve, reject) => {
+        await waitFor(1000)
+        resolve("This should time out first")
+    }), 500, "timed out")).rejects.toEqual("timed out")
+})
+
+test("retryPromiseWithDelayAndTimeout actually retries with delay and timeout", async () => {
+    const start = Date.now()
+    let retries = 0
+    await expect(retryPromiseWithDelayAndTimeout(() => {
+        return new Promise(async (resolve, reject) => {
+            retries += 1 
+            await waitFor(100)
+            // throw new Error("This should retry")
+        })
+    }, 5, 100, 50)).rejects.toEqual("Promise timed out")
+    const end = Date.now()
+    expect(end - start).toBeGreaterThanOrEqual(500)
+    expect(retries).toEqual(5)
+})
+
 
 test("handles events", async () => {
     // Checks for the happy path

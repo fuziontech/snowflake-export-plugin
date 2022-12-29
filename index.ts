@@ -6,6 +6,7 @@ import { ManagedUpload } from 'aws-sdk/clients/s3'
 import { S3 } from 'aws-sdk'
 import { Storage, Bucket } from '@google-cloud/storage'
 import { PassThrough } from 'stream'
+import { Timeout } from 'aws-sdk/clients/lambda'
 
 interface SnowflakePluginInput {
     global: {
@@ -52,47 +53,56 @@ interface SnowflakePluginInput {
  * @param millSeconds milliseconds to wait before resolving
  * @returns
  */
-function waitFor(millSeconds): Promise<void> {
-  return new Promise<void>((resolve, _) => {
-    setTimeout(() => {
-      resolve();
-    }, millSeconds);
-  });
+export function waitFor(millSeconds): Promise<void> {
+    return new Promise<void>((resolve, _) => {
+        setTimeout(() => {
+            resolve();
+        }, millSeconds);
+    });
 }
 
 /**
  * Util function to return a promise which is resolved or times out in provided milliseconds
  *  
- * @param prom promise to be resolved 
+ * @param p promise to be resolved 
  * @param time timeout in milliseconds 
+ * @param exception exception to be thrown on timeout 
  * @returns 
  */
-const timeout = (prom, time) =>
-	Promise.race([prom, new Promise((_r, rej) => setTimeout(rej, time))]);
+export async function timeout(prom: Promise<any>, time: number, exception: string) {
+    let timer: NodeJS.Timeout
+    return Promise.race([prom, new Promise((_r, reject) => {
+        function rej() {
+            reject(exception)
+            console.log(exception)
+        }
+        timer = setTimeout(rej, time)
+    })]).finally(() => clearTimeout(timer));
+}
 
 /**
  * Util function to retry a promise with a delay between retries
  * as well as timeouts for each retry
  * 
- * @param promise promise to be resolved
+ * @param promise function that yields promise to be resolved
  * @param nthTry number of times to retry
  * @param delayTime delay between retries in milliseconds
  * @param timeoutTime timeout for each retry in milliseconds
  * @returns
- */  
-async function retryPromiseWithDelayAndTimeout(promise, nthTry, delayTime, timeoutTime) {
-  try {
-    const res = await timeout(promise, timeoutTime);
-    return res;
-  } catch (e) {
-    if (nthTry <= 1) {
-      return Promise.reject(e);
+ */
+export async function retryPromiseWithDelayAndTimeout(promise: () => Promise<any>, nthTry: number, delayTime: number, timeoutTime: number) {
+    try {
+        const res = await timeout(promise(), timeoutTime, 'Promise timed out');
+        return res;
+    } catch (e) {
+        if (nthTry <= 1) {
+            return Promise.reject(e);
+        }
+        console.log('retrying with', nthTry, 'times remaining');
+        // wait for delayTime amount of time before calling this method again
+        await waitFor(delayTime);
+        return retryPromiseWithDelayAndTimeout(promise, nthTry - 1, delayTime, timeoutTime);
     }
-    console.log('retrying with', nthTry, 'times remaining');
-    // wait for delayTime amount of time before calling this method again
-    await waitFor(delayTime);
-    return retryPromiseWithDelayAndTimeout(promise, nthTry - 1, delayTime, timeoutTime);
-  }
 }
 
 interface TableRow {
@@ -222,7 +232,7 @@ function generateCsvString(events: TableRow[]): string {
     ]
     const csvHeader = columns.join(CSV_FIELD_DELIMITER)
     const csvRows: string[] = [csvHeader]
-    events.forEach((currentEvent) => { 
+    events.forEach((currentEvent) => {
         csvRows.push(columns.map((column) => (currentEvent[column] || '').toString()).join(CSV_FIELD_DELIMITER))
     })
     return csvRows.join('\n')
@@ -384,7 +394,7 @@ class Snowflake {
                         ...roleConfig,
                     })
 
-                    await retryPromiseWithDelayAndTimeout(new Promise<string>((resolve, reject) =>
+                    await retryPromiseWithDelayAndTimeout(() => new Promise<string>((resolve, reject) =>
                         connection.connect((err, conn) => {
                             if (err) {
                                 console.error('Error connecting to Snowflake: ' + err.message)
@@ -394,7 +404,7 @@ class Snowflake {
                             }
                         })
                     ), 5, 5000, 5000)
-                 
+
                     return connection
                 },
                 destroy: async (connection) => {
@@ -564,8 +574,6 @@ const snowflakePlugin: Plugin<SnowflakePluginInput> = {
         }
 
         const { account, username, password, dbschema, table, stage, database, role, warehouse, copyCadenceMinutes } = config
-
-        console.log("setting up snowflake from setupPlugin now")
 
         global.snowflake = new Snowflake({
             account,
