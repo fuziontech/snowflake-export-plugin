@@ -7,7 +7,7 @@
     "config": [
         {
             "key": "account",
-            "name": "Snowflake account",
+            "name": "Sowflake account",
             "type": "string",
             "hint": "In the format of \"ab12345\" or \"ab12345.region.cloud\"",
             "required": true

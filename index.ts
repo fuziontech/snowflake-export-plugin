@@ -52,8 +52,8 @@ interface SnowflakePluginInput {
  * @param millSeconds milliseconds to wait before resolving
  * @returns
  */
-function waitFor(millSeconds) {
-  return new Promise((resolve, reject) => {
+function waitFor(millSeconds): Promise<void> {
+  return new Promise<void>((resolve, _) => {
     setTimeout(() => {
       resolve();
     }, millSeconds);
@@ -88,7 +88,7 @@ async function retryPromiseWithDelayAndTimeout(promise, nthTry, delayTime, timeo
     if (nthTry <= 1) {
       return Promise.reject(e);
     }
-    console.log('retrying', nthTry, 'time');
+    console.log('retrying with', nthTry, 'times remaining');
     // wait for delayTime amount of time before calling this method again
     await waitFor(delayTime);
     return retryPromiseWithDelayAndTimeout(promise, nthTry - 1, delayTime, timeoutTime);
