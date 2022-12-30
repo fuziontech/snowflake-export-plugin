@@ -385,7 +385,7 @@ export class Snowflake {
             {
                 create: async () => {
                     let connection: snowflake.Connection
-                    await retryPromiseWithDelayAndTimeout(() => new Promise<string>((resolve, reject) => {
+                    await new Promise<string>((resolve, reject) => {
                         connection = snowflake.createConnection({
                             account,
                             username,
@@ -402,7 +402,7 @@ export class Snowflake {
                                 resolve(conn.getId())
                             }
                         })
-                    }), 5, 5000, 5000)
+                    })
                     return connection
                 },
                 destroy: async (connection) => {
